@@ -86,7 +86,8 @@ class JsonTreeView extends StatelessWidget {
     }
 
     final children = <Widget>[];
-    var offset = currentOffset;
+    // The title is rendered before the children, so it owns the first matches.
+    var offset = currentOffset + _countMatchesInTitle(keyName);
 
     for (final entry in map.entries) {
       children.add(_buildNode(context, entry.value,
@@ -99,12 +100,13 @@ class JsonTreeView extends StatelessWidget {
     final totalMatches = _countMatchesInNode(map, keyName);
 
     return _CustomExpansionTile(
-      titleString: keyName != null ? '"$keyName" : ' : '',
+      titleString: SearchHelper.jsonTreeNodeTitle(keyName),
       children: children,
       collapsedCount: map.length,
       isObject: true,
       initiallyExpanded: isRoot || _expandChildren,
       isDarkMode: _isDarkMode,
+      searchQuery: searchQuery,
       matchIndexOffset: currentOffset,
       totalMatches: totalMatches,
     );
@@ -122,7 +124,7 @@ class JsonTreeView extends StatelessWidget {
     }
 
     final children = <Widget>[];
-    var offset = currentOffset;
+    var offset = currentOffset + _countMatchesInTitle(keyName);
 
     for (final item in list) {
       children.add(_buildNode(context, item, currentOffset: offset));
@@ -134,12 +136,13 @@ class JsonTreeView extends StatelessWidget {
     final totalMatches = _countMatchesInNode(list, keyName);
 
     return _CustomExpansionTile(
-      titleString: keyName != null ? '"$keyName" : ' : '',
+      titleString: SearchHelper.jsonTreeNodeTitle(keyName),
       children: children,
       collapsedCount: list.length,
       isObject: false,
       initiallyExpanded: isRoot || _expandChildren,
       isDarkMode: _isDarkMode,
+      searchQuery: searchQuery,
       matchIndexOffset: currentOffset,
       totalMatches: totalMatches,
     );
@@ -158,7 +161,7 @@ class JsonTreeView extends StatelessWidget {
     }
 
     final children = <Widget>[];
-    var offset = currentOffset;
+    var offset = currentOffset + _countMatchesInTitle(keyName);
 
     for (final field in formData.fields) {
       children.add(_buildNode(context, field.value,
@@ -167,9 +170,7 @@ class JsonTreeView extends StatelessWidget {
     }
 
     for (final file in formData.files) {
-      final sizeInMb = file.value.length ~/ 1024;
-      final fileSizeString = '${sizeInMb.toStringAsFixed(1)} kb';
-      final nodeValue = "($fileSizeString) - ${file.value.filename}";
+      final nodeValue = SearchHelper.jsonTreeFormDataFileText(file.value);
       children.add(_buildNode(context, nodeValue,
           keyName: file.key, currentOffset: offset));
       offset += _countMatchesInNode(nodeValue, file.key);
@@ -180,54 +181,25 @@ class JsonTreeView extends StatelessWidget {
     final totalMatches = _countMatchesInNode(formData, keyName);
 
     return _CustomExpansionTile(
-      titleString: keyName != null ? '"$keyName" : ' : '',
+      titleString: SearchHelper.jsonTreeNodeTitle(keyName),
       children: children,
       collapsedCount: length,
       isObject: true,
       initiallyExpanded: isRoot || _expandChildren,
       isDarkMode: _isDarkMode,
+      searchQuery: searchQuery,
       matchIndexOffset: currentOffset,
       totalMatches: totalMatches,
     );
   }
 
-  int _countMatchesInNode(dynamic node, String? key) {
-    if (searchQuery.isEmpty) return 0;
+  int _countMatchesInTitle(String? keyName) => SearchHelper.countMatches(
+        text: SearchHelper.jsonTreeNodeTitle(keyName),
+        query: searchQuery,
+      );
 
-    if (node is Map<String, dynamic>) {
-      var count = 0;
-      for (final entry in node.entries) {
-        count += _countMatchesInNode(entry.value, entry.key);
-      }
-      return count;
-    } else if (node is List) {
-      var count = 0;
-      for (final item in node) {
-        count += _countMatchesInNode(item, null);
-      }
-      return count;
-    } else if (node is FormData) {
-      var count = 0;
-      for (final field in node.fields) {
-        count += _countMatchesInNode(field.value, field.key);
-      }
-      for (final file in node.files) {
-        final sizeInMb = file.value.length ~/ 1024;
-        final fileSizeString = '${sizeInMb.toStringAsFixed(1)} kb';
-        final nodeValue = "($fileSizeString) - ${file.value.filename}";
-        count += _countMatchesInNode(nodeValue, file.key);
-      }
-      return count;
-    } else {
-      final formattedValue = (node is String && node != '{}' && node != '[]')
-          ? '"$node"'
-          : '$node';
-      final fullText =
-          '${key != null ? '"$key" : ' : ''}$formattedValue${key != null ? ',' : ''}';
-      return SearchHelper.findMatches(text: fullText, query: searchQuery)
-          .length;
-    }
-  }
+  int _countMatchesInNode(dynamic node, String? key) =>
+      SearchHelper.countMatchesInJsonNode(node, key: key, query: searchQuery);
 
   Widget _buildLeafNode(
       BuildContext context, String? key, dynamic value, int currentOffset) {
@@ -321,6 +293,7 @@ class _CustomExpansionTile extends StatefulWidget {
   final bool isObject;
   final bool isDarkMode;
 
+  final String searchQuery;
   final int matchIndexOffset;
   final int totalMatches;
 
@@ -331,6 +304,7 @@ class _CustomExpansionTile extends StatefulWidget {
     this.collapsedCount,
     this.isObject = false,
     required this.isDarkMode,
+    this.searchQuery = '',
     this.matchIndexOffset = 0,
     this.totalMatches = 0,
   });
@@ -342,6 +316,10 @@ class _CustomExpansionTile extends StatefulWidget {
 class _CustomExpansionTileState extends State<_CustomExpansionTile>
     with SingleTickerProviderStateMixin {
   late bool _expanded;
+
+  /// The match this node has already been expanded for, so that collapsing it
+  /// again is not undone on the next rebuild.
+  int? _expandedForMatchIndex;
 
   @override
   void initState() {
@@ -372,14 +350,21 @@ class _CustomExpansionTileState extends State<_CustomExpansionTile>
         final isActive = currentMatchIndex >= widget.matchIndexOffset &&
             currentMatchIndex < widget.matchIndexOffset + widget.totalMatches;
 
-        if (isActive && !_expanded) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _expanded = true;
-              });
-            }
-          });
+        // Reveal the match navigated to, but only once per match, otherwise
+        // this node could never be collapsed again while holding it.
+        if (isActive && _expandedForMatchIndex != currentMatchIndex) {
+          _expandedForMatchIndex = currentMatchIndex;
+          if (!_expanded) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _expanded = true;
+                });
+              }
+            });
+          }
+        } else if (!isActive) {
+          _expandedForMatchIndex = null;
         }
 
         return Padding(
@@ -409,20 +394,27 @@ class _CustomExpansionTileState extends State<_CustomExpansionTile>
                         ),
                       ),
                       const SizedBox(width: 4),
+                      if (hasTitleString)
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: HighlightedText(
+                            text: widget.titleString,
+                            searchQuery: widget.searchQuery,
+                            isDarkMode: widget.isDarkMode,
+                            matchIndexOffset: widget.matchIndexOffset,
+                            selectable: false,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                              color: textColor,
+                            ),
+                          ),
+                        ),
                       Flexible(
                         fit: FlexFit.loose,
                         child: Text.rich(
                           TextSpan(
                             children: [
-                              if (hasTitleString)
-                                TextSpan(
-                                  text: widget.titleString,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 14,
-                                    color: textColor,
-                                  ),
-                                ),
                               if (_expanded)
                                 TextSpan(
                                   text: widget.isObject ? '{' : '[',

@@ -101,52 +101,47 @@ class RequestDetailsPage extends StatelessWidget {
 
         timeAndUrlText += '\n\nURL: ${request.url}';
 
+        // The sections are counted in the order they are rendered in, so that
+        // every match index is owned by exactly one section. `_SearchState`
+        // carries `isTreeView` because the two view modes do not render (and
+        // therefore do not match) the same text.
+        int sectionMatches(dynamic data) => SearchHelper.countMatchesInSection(
+              data: data,
+              query: query,
+              isTreeView: state.isTreeView,
+            );
+
         final timeAndUrlMatches =
-            SearchHelper.findMatches(text: timeAndUrlText, query: query).length;
+            SearchHelper.countMatches(text: timeAndUrlText, query: query);
         final timeAndUrlOffset = currentOffset;
         currentOffset += timeAndUrlMatches;
 
-        final headersPretty = request.headers != null
-            ? JsonPrettyConverter().convert(request.headers)
-            : '';
-        final headersMatches =
-            SearchHelper.findMatches(text: headersPretty, query: query).length;
+        final headersPretty = SearchHelper.prettyTextOf(request.headers);
+        final headersMatches = sectionMatches(request.headers);
         final headersOffset = currentOffset;
         currentOffset += headersMatches;
 
-        final queryParamsPretty = request.queryParameters != null
-            ? JsonPrettyConverter().convert(request.queryParameters)
-            : '';
-        final queryParamsMatches =
-            SearchHelper.findMatches(text: queryParamsPretty, query: query)
-                .length;
+        final queryParamsPretty =
+            SearchHelper.prettyTextOf(request.queryParameters);
+        final queryParamsMatches = sectionMatches(request.queryParameters);
         final queryParamsOffset = currentOffset;
         currentOffset += queryParamsMatches;
 
-        final requestBodyPretty = request.requestBody != null
-            ? JsonPrettyConverter().convert(request.requestBody)
-            : '';
-        final requestBodyMatches =
-            SearchHelper.findMatches(text: requestBodyPretty, query: query)
-                .length;
+        final requestBodyPretty =
+            SearchHelper.prettyTextOf(request.requestBody);
+        final requestBodyMatches = sectionMatches(request.requestBody);
         final requestBodyOffset = currentOffset;
         currentOffset += requestBodyMatches;
 
-        final graphqlVarsPretty = request.graphqlRequestVars != null
-            ? JsonPrettyConverter().convert(request.graphqlRequestVars)
-            : '';
-        final graphqlVarsMatches =
-            SearchHelper.findMatches(text: graphqlVarsPretty, query: query)
-                .length;
+        final graphqlVarsPretty =
+            SearchHelper.prettyTextOf(request.graphqlRequestVars);
+        final graphqlVarsMatches = sectionMatches(request.graphqlRequestVars);
         final graphqlVarsOffset = currentOffset;
         currentOffset += graphqlVarsMatches;
 
-        final responseBodyPretty = request.responseBody != null
-            ? JsonPrettyConverter().convert(request.responseBody)
-            : '';
-        final responseBodyMatches =
-            SearchHelper.findMatches(text: responseBodyPretty, query: query)
-                .length;
+        final responseBodyPretty =
+            SearchHelper.prettyTextOf(request.responseBody);
+        final responseBodyMatches = sectionMatches(request.responseBody);
         final responseBodyOffset = currentOffset;
         currentOffset += responseBodyMatches;
 
@@ -301,52 +296,57 @@ class RequestDetailsPage extends StatelessWidget {
             ),
           ],
         ),
-        child: Theme(
-          data: theme.copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            key: initiallyExpanded ? ValueKey('${title}_expanded') : null,
-            initiallyExpanded: initiallyExpanded,
-            tilePadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 10,
-            ),
-            childrenPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 8,
-            ),
-            expandedAlignment: Alignment.topLeft,
-            title: Row(
-              children: [
-                Expanded(
-                  child: titleWidget ??
-                      Text(
-                        title ?? '',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+        // The ExpansionTile needs its own Material ancestor, otherwise the
+        // DecoratedBox above hides its background and ink splashes.
+        child: Material(
+          type: MaterialType.transparency,
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              key: initiallyExpanded ? ValueKey('${title}_expanded') : null,
+              initiallyExpanded: initiallyExpanded,
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              childrenPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 8,
+              ),
+              expandedAlignment: Alignment.topLeft,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: titleWidget ??
+                        Text(
+                          title ?? '',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                ),
-                InkWell(
-                  child: const Icon(Icons.copy, color: Colors.grey, size: 20),
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: txtCopy));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Copied to clipboard')),
-                    );
-                  },
+                  ),
+                  InkWell(
+                    child: const Icon(Icons.copy, color: Colors.grey, size: 20),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: txtCopy));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Copied to clipboard')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              children: [
+                Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: children,
+                  ),
                 ),
               ],
             ),
-            children: [
-              Container(
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: children,
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -425,7 +425,9 @@ class RequestDetailsPage extends StatelessWidget {
     required bool isDarkMode,
     required int matchIndexOffset,
   }) {
-    final prettyprint = JsonPrettyConverter().convert(text);
+    // `JsonPrettyConverter` hands back the value itself for numbers and bools,
+    // so it has to be stringified before it can be searched or rendered.
+    final prettyprint = SearchHelper.prettyTextOf(text);
     final lines = prettyprint.split('\n');
 
     if (lines.isEmpty) return const SizedBox();

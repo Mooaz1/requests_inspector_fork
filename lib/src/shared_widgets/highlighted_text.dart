@@ -11,6 +11,10 @@ class HighlightedText extends StatefulWidget {
   final bool isDarkMode;
   final int matchIndexOffset;
 
+  /// Set to `false` when the text sits inside a tappable widget, so that the
+  /// text selection does not swallow the taps.
+  final bool selectable;
+
   const HighlightedText({
     super.key,
     this.text,
@@ -19,6 +23,7 @@ class HighlightedText extends StatefulWidget {
     this.style,
     required this.isDarkMode,
     this.matchIndexOffset = 0,
+    this.selectable = true,
   }) : assert(text != null || spans != null);
 
   @override
@@ -34,17 +39,7 @@ class _HighlightedTextState extends State<HighlightedText> {
         widget.text ?? widget.spans?.map((s) => s.toPlainText()).join() ?? '';
 
     if (widget.searchQuery.isEmpty) {
-      if (widget.spans != null) {
-        return SelectableText.rich(
-          TextSpan(children: widget.spans),
-          contextMenuBuilder: _buildContextMenu,
-        );
-      }
-      return SelectableText(
-        effectiveText,
-        style: widget.style,
-        contextMenuBuilder: _buildContextMenu,
-      );
+      return _buildPlainText(effectiveText);
     }
 
     final matches = SearchHelper.findMatches(
@@ -53,17 +48,7 @@ class _HighlightedTextState extends State<HighlightedText> {
     );
 
     if (matches.isEmpty) {
-      if (widget.spans != null) {
-        return SelectableText.rich(
-          TextSpan(children: widget.spans),
-          contextMenuBuilder: _buildContextMenu,
-        );
-      }
-      return SelectableText(
-        effectiveText,
-        style: widget.style,
-        contextMenuBuilder: _buildContextMenu,
-      );
+      return _buildPlainText(effectiveText);
     }
 
     return Selector<InspectorController, int>(
@@ -188,25 +173,45 @@ class _HighlightedTextState extends State<HighlightedText> {
           }
         }
 
-        return SelectableText.rich(
-          TextSpan(children: finalSpans),
-          key: _key,
-          contextMenuBuilder: _buildContextMenu,
-        );
+        return _buildRichText(TextSpan(children: finalSpans));
       },
+    );
+  }
+
+  Widget _buildPlainText(String effectiveText) => _buildRichText(
+        widget.spans != null
+            ? TextSpan(children: widget.spans)
+            : TextSpan(text: effectiveText, style: widget.style),
+      );
+
+  Widget _buildRichText(TextSpan span) {
+    if (!widget.selectable) return Text.rich(span, key: _key);
+
+    return SelectableText.rich(
+      span,
+      key: _key,
+      contextMenuBuilder: _buildContextMenu,
     );
   }
 
   void _triggerScroll() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        Scrollable.ensureVisible(
-          _key.currentContext!,
-          alignment: 0.5,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+      if (!mounted) return;
+
+      final currentContext = _key.currentContext;
+      // The active match may have been scrolled out of the tree (or replaced
+      // by another query) before this callback runs.
+      if (currentContext == null ||
+          Scrollable.maybeOf(currentContext) == null) {
+        return;
       }
+
+      Scrollable.ensureVisible(
+        currentContext,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     });
   }
 

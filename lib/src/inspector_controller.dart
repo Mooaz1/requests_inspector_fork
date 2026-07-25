@@ -10,6 +10,7 @@ import 'curl_command_generator.dart';
 import 'har_generator.dart';
 import 'json_pretty_converter.dart';
 import 'helpers/inspector_helper.dart';
+import 'helpers/search_helper.dart';
 import 'enums/share_type_enum.dart';
 import 'requests_filter.dart';
 
@@ -203,6 +204,7 @@ class InspectorController extends ChangeNotifier {
     if (_selectedRequest == value && _selectedTab == 1) return;
     _selectedRequest = value;
     _selectedTab = 1;
+    _currentMatchIndex = 0;
     _updateTotalMatches();
     notifyListeners();
   }
@@ -443,6 +445,8 @@ class InspectorController extends ChangeNotifier {
 
   void toggleInspectorJsonView() {
     _isTreeView = !_isTreeView;
+    // The two view modes render different text, so they match differently.
+    _updateTotalMatches();
     notifyListeners();
   }
 
@@ -451,19 +455,16 @@ class InspectorController extends ChangeNotifier {
     if (!_isSearchVisible) {
       _searchQuery = '';
       _totalMatches = 0;
+      _currentMatchIndex = -1;
     }
-    notifyListeners();
-  }
-
-  void updateMatchCount(int count) {
-    if (_totalMatches == count) return;
-    _totalMatches = count;
     notifyListeners();
   }
 
   void updateSearchQuery(String query) {
     if (_searchQuery == query) return;
     _searchQuery = query;
+    // A new query starts over from its first match.
+    _currentMatchIndex = 0;
     _updateTotalMatches();
     notifyListeners();
   }
@@ -481,30 +482,48 @@ class InspectorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Recomputes how many matches the details page renders for the current
+  /// query, section by section and in the same order the page renders them.
+  ///
+  /// It must stay in sync with `RequestDetailsPage`: the page hands each
+  /// section the index its first match has, so counting the sections
+  /// differently here would make [currentMatchIndex] point at a match the page
+  /// never highlights.
   void _updateTotalMatches() {
-    if (_searchQuery.isEmpty || _selectedRequest == null) {
+    final request = _selectedRequest;
+    if (_searchQuery.isEmpty || request == null) {
       _totalMatches = 0;
+      _currentMatchIndex = -1;
       return;
     }
 
-    final allText = _extractAllText(_selectedRequest!);
-    final query = _searchQuery.toLowerCase();
-    final text = allText.toLowerCase();
+    var count = SearchHelper.countMatches(
+      text: _timeAndUrlText(request),
+      query: _searchQuery,
+    );
 
-    var count = 0;
-    var index = text.indexOf(query);
-    while (index != -1) {
-      count++;
-      index = text.indexOf(query, index + query.length);
+    for (final section in [
+      request.headers,
+      request.queryParameters,
+      request.requestBody,
+      request.graphqlRequestVars,
+      request.responseBody,
+    ]) {
+      count += SearchHelper.countMatchesInSection(
+        data: section,
+        query: _searchQuery,
+        isTreeView: _isTreeView,
+      );
     }
+
     _totalMatches = count;
-    _currentMatchIndex = count > 0 ? 0 : -1;
+    // Keep the highlighted match when the total only grew or shrank around it.
+    _currentMatchIndex =
+        count == 0 ? -1 : _currentMatchIndex.clamp(0, count - 1);
   }
 
-  String _extractAllText(RequestDetails request) {
-    final converter = JsonPrettyConverter();
-    final parts = <String>[];
-
+  /// The text of the first (always plain) section of the details page.
+  String _timeAndUrlText(RequestDetails request) {
     final sentTimeText = InspectorHelper.extractTimeText(request.sentTime);
     var text = 'Sent at: $sentTimeText';
 
@@ -516,24 +535,7 @@ class InspectorController extends ChangeNotifier {
       text += '\nReceived at: $receivedTimeText\nDuration: $durationText';
     }
 
-    text += '\n\nURL: ${request.url}';
-    parts.add(text);
-
-    if (request.headers != null) parts.add(converter.convert(request.headers));
-    if (request.queryParameters != null) {
-      parts.add(converter.convert(request.queryParameters));
-    }
-    if (request.requestBody != null) {
-      parts.add(converter.convert(request.requestBody));
-    }
-    if (request.graphqlRequestVars != null) {
-      parts.add(converter.convert(request.graphqlRequestVars));
-    }
-    if (request.responseBody != null) {
-      parts.add(converter.convert(request.responseBody));
-    }
-
-    return parts.join('\n');
+    return '$text\n\nURL: ${request.url}';
   }
 
   void toggleExpandChildren() {

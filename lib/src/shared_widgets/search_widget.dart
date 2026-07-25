@@ -45,6 +45,14 @@ class _SearchWidgetState extends State<SearchWidget> {
     super.dispose();
   }
 
+  /// `1 / 85` while the query has matches, and a hint when it has none, so
+  /// that a query that matches nothing is never mistaken for a broken search.
+  String _counterOf(InspectorController controller) {
+    if (controller.searchQuery.isEmpty) return '';
+    if (controller.totalMatches <= 0) return 'No matches';
+    return '${controller.currentMatchIndex + 1} / ${controller.totalMatches}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final fillColor = widget.isDarkMode ? Colors.black : Colors.white;
@@ -71,16 +79,16 @@ class _SearchWidgetState extends State<SearchWidget> {
               suffixIcon: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Selector<InspectorController, InspectorController>(
-                    selector: (_, controller) => controller,
-                    builder: (context, controller, _) {
-                      final current = controller.currentMatchIndex;
-                      final total = controller.totalMatches;
-                      if (total <= 0) return const SizedBox.shrink();
+                  // Selecting the counter itself, so that it is rebuilt
+                  // whenever the query or the navigated match changes.
+                  Selector<InspectorController, String>(
+                    selector: (_, controller) => _counterOf(controller),
+                    builder: (context, counter, _) {
+                      if (counter.isEmpty) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4.0),
                         child: Text(
-                          '${current + 1} / $total',
+                          counter,
                           style: TextStyle(
                             color: iconColor,
                             fontSize: 11,

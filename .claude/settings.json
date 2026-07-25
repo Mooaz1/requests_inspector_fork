@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(perl -pi -e \"s/RequestDetails\\\\\\(url: /RequestDetails\\(requestMethod: RequestMethod.GET, url: /g\" test/inspector_controller_test.dart)",
+      "Bash(dart format *)",
+      "Bash(grep -Ev \"^$\")",
+      "Bash(perl -0pi -e \"s/InspectorController\\\\\\(enabled: true\\\\\\)/InspectorController\\(\\\\n enabled: true,\\\\n \\\\/\\\\/ Shaking needs the sensors plugin, which is not available in tests.\\\\n showInspectorOn: ShowInspectorOn.LongPress,\\\\n \\)/\" test/inspector_controller_test.dart)",
+      "Bash(perl -0pi -e \"s/InspectorController\\\\\\(enabled: false\\\\\\)/InspectorController\\(\\\\n enabled: true,\\\\n \\\\/\\\\/ Shaking needs the sensors plugin, which is not available in tests.\\\\n showInspectorOn: ShowInspectorOn.LongPress,\\\\n \\)/\" test/details_search_test.dart)"
+    ]
+  }
+}
