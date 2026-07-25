@@ -402,36 +402,94 @@ class Inspector extends StatelessWidget {
           inspectorController.selectedTab == 1 &&
           inspectorController.selectedRequest != null,
       builder: (context, showShareButton, _) => showShareButton
-          ? FloatingActionButton(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.share),
-              onPressed: () async {
-                final box = context.findRenderObject() as RenderBox?;
-
-                final selectedRequest = InspectorController().selectedRequest!;
-                final isHttp = _isHttp(selectedRequest);
-
-                var shareType =
-                    isHttp ? await _showDialogShareType(context) : null;
-
-                if (shareType == null) return;
-
-                if (shareType == ShareType.Har) {
-                  shareType = await _showHarFormatDialog(context);
-                  if (shareType == null) return;
-                }
-
-                InspectorController().shareSelectedRequest(
-                  sharePositionOrigin: box == null
-                      ? null
-                      : box.localToGlobal(Offset.zero) & box.size,
-                  shareType: shareType,
-                );
-              },
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Not every device has a share target that can take the log,
+                // so the clipboard is offered as its own action.
+                FloatingActionButton.small(
+                  heroTag: 'requests_inspector_copy',
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  tooltip: 'Copy to clipboard',
+                  onPressed: () => _copySelectedRequest(context),
+                  child: const Icon(Icons.copy),
+                ),
+                const SizedBox(height: 12.0),
+                FloatingActionButton(
+                  heroTag: 'requests_inspector_share',
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  tooltip: 'Share',
+                  onPressed: () => _shareSelectedRequest(context),
+                  child: const Icon(Icons.share),
+                ),
+              ],
             )
           : const SizedBox(),
     );
+  }
+
+  Future<void> _shareSelectedRequest(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+
+    var shareType = await _askForShareType(context);
+    if (shareType == null) return;
+
+    if (shareType == ShareType.Har) {
+      if (!context.mounted) return;
+      shareType = await _showHarFormatDialog(context);
+      if (shareType == null) return;
+    }
+
+    InspectorController().shareSelectedRequest(
+      sharePositionOrigin:
+          box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+      shareType: shareType,
+    );
+  }
+
+  Future<void> _copySelectedRequest(BuildContext context) async {
+    final shareType = await _askForShareType(context);
+    if (shareType == null) return;
+
+    // A HAR can only be copied as text, its file variant is a share-only
+    // format.
+    final copied = await InspectorController().copySelectedRequest(
+      shareType: shareType == ShareType.HarFile ? ShareType.Har : shareType,
+    );
+    if (!copied || !context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${_shareTypeName(shareType)} copied')),
+    );
+  }
+
+  /// Asks which format to share or copy, unless the request has only one.
+  Future<ShareType?> _askForShareType(BuildContext context) async {
+    final selectedRequest = InspectorController().selectedRequest;
+    if (selectedRequest == null) return null;
+
+    // A cURL command, and therefore a HAR, only makes sense for an HTTP
+    // request, so there is nothing to choose from for the other ones.
+    if (!_isHttp(selectedRequest)) return ShareType.NormalLog;
+
+    return _showDialogShareType(context);
+  }
+
+  String _shareTypeName(ShareType shareType) {
+    switch (shareType) {
+      case ShareType.CurlCommand:
+        return 'cURL command';
+      case ShareType.NormalLog:
+        return 'Log';
+      case ShareType.Har:
+      case ShareType.HarFile:
+        return 'HAR';
+      case ShareType.Both:
+        return 'cURL command and log';
+    }
   }
 
   bool _isHttp(RequestDetails selectedRequest) {

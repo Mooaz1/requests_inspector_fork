@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:requests_inspector/src/shake.dart';
 import 'package:requests_inspector/src/stopper_filter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -347,34 +348,12 @@ class InspectorController extends ChangeNotifier {
     Rect? sharePositionOrigin,
     ShareType shareType = ShareType.NormalLog,
   }) {
-    String? requestShareContent;
-    if (shareType == ShareType.CurlCommand) {
-      final curlCommandGenerator = CurlCommandGenerator(_selectedRequest!);
-      requestShareContent = curlCommandGenerator.generate();
-    } else if (shareType == ShareType.NormalLog) {
-      final requestMap = _selectedRequest!.toMap();
-      requestShareContent = _formatMap(requestMap);
-    } else if (shareType == ShareType.Har) {
-      final curlCommandGenerator = CurlCommandGenerator(_selectedRequest!);
-      final curlContent = curlCommandGenerator.generate();
+    final request = _selectedRequest;
+    if (request == null) return;
 
-      final harGenerator = HarGenerator();
-      requestShareContent = harGenerator.generate(
-        request: _selectedRequest!,
-        curlCommand: curlContent,
-      );
-    } else if (shareType == ShareType.HarFile) {
-      final curlCommandGenerator = CurlCommandGenerator(_selectedRequest!);
-      final curlContent = curlCommandGenerator.generate();
-
-      final harGenerator = HarGenerator();
-      final harJson = harGenerator.generate(
-        request: _selectedRequest!,
-        curlCommand: curlContent,
-      );
-
+    if (shareType == ShareType.HarFile) {
       final file = XFile.fromData(
-        utf8.encode(harJson),
+        utf8.encode(buildShareContent(ShareType.Har, request: request)),
         name: 'request.har',
         mimeType: 'application/json',
       );
@@ -384,21 +363,58 @@ class InspectorController extends ChangeNotifier {
         sharePositionOrigin: sharePositionOrigin,
       );
       return;
-    } else {
-      final curlCommandGenerator = CurlCommandGenerator(_selectedRequest!);
-      final curlContent = curlCommandGenerator.generate();
-
-      final requestMap = _selectedRequest!.toMap();
-      final normalLogContent = _formatMap(requestMap);
-
-      requestShareContent =
-          '================[cURL Command]=================\n$curlContent\n\n==================[Normal Log]===================\n$normalLogContent';
     }
 
     Share.share(
-      requestShareContent,
+      buildShareContent(shareType, request: request),
       sharePositionOrigin: sharePositionOrigin,
     );
+  }
+
+  /// Puts the selected request on the clipboard.
+  ///
+  /// The share sheet is not always usable: emulators such as BlueStacks list
+  /// no target that can take the text, so the log has to be copyable without
+  /// leaving the inspector.
+  Future<bool> copySelectedRequest({
+    ShareType shareType = ShareType.NormalLog,
+  }) async {
+    final request = _selectedRequest;
+    if (request == null) return false;
+
+    await Clipboard.setData(
+      ClipboardData(text: buildShareContent(shareType, request: request)),
+    );
+    return true;
+  }
+
+  /// The text shared, or copied, for [shareType].
+  ///
+  /// [ShareType.HarFile] has no text of its own: it is the HAR of the request,
+  /// shared as a file instead of as text.
+  String buildShareContent(ShareType shareType, {RequestDetails? request}) {
+    final sharedRequest = request ?? _selectedRequest!;
+
+    String curlCommand() => CurlCommandGenerator(sharedRequest).generate();
+    String normalLog() => _formatMap(sharedRequest.toMap());
+
+    switch (shareType) {
+      case ShareType.CurlCommand:
+        return curlCommand();
+      case ShareType.NormalLog:
+        return normalLog();
+      case ShareType.Har:
+      case ShareType.HarFile:
+        return HarGenerator().generate(
+          request: sharedRequest,
+          curlCommand: curlCommand(),
+        );
+      case ShareType.Both:
+        return '================[cURL Command]=================\n'
+            '${curlCommand()}\n\n'
+            '==================[Normal Log]===================\n'
+            '${normalLog()}';
+    }
   }
 
   @override
