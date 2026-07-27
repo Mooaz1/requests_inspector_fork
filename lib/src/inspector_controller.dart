@@ -303,7 +303,13 @@ class InspectorController extends ChangeNotifier {
 
   void showInspector() => pageController.jumpToPage(1);
 
-  void hideInspector() => pageController.jumpToPage(0);
+  void hideInspector() {
+    // Whatever the inspector had focused, the search field above all, would
+    // otherwise keep the keyboard up over the app it has just been hidden
+    // behind.
+    FocusManager.instance.primaryFocus?.unfocus();
+    pageController.jumpToPage(0);
+  }
 
   void addNewRequest(RequestDetails request) {
     if (!_enabled) return;

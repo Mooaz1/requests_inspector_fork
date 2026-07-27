@@ -198,22 +198,37 @@ class _HighlightedTextState extends State<HighlightedText> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      final currentContext = _key.currentContext;
       // The active match may have been scrolled out of the tree (or replaced
       // by another query) before this callback runs.
-      if (currentContext == null ||
-          Scrollable.maybeOf(currentContext) == null) {
-        return;
-      }
+      var context = _key.currentContext;
+      if (context == null) return;
 
-      Scrollable.ensureVisible(
-        currentContext,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      // Scrolls every list the match sits in, up to but excluding the page
+      // view the inspector is a page of.
+      //
+      // `Scrollable.ensureVisible` would walk into that page view too and
+      // bring the inspector back over the app, even long after it has been
+      // closed: any rebuild of the active match would reopen it.
+      var scrollable = Scrollable.maybeOf(context);
+      while (scrollable != null && !_isInspectorPageView(scrollable)) {
+        final renderObject = context!.findRenderObject();
+        if (renderObject == null) return;
+
+        scrollable.position.ensureVisible(
+          renderObject,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+
+        context = scrollable.context;
+        scrollable = Scrollable.maybeOf(context);
+      }
     });
   }
+
+  bool _isInspectorPageView(ScrollableState scrollable) => identical(
+      scrollable.widget.controller, InspectorController().pageController);
 
   Widget _buildContextMenu(
       BuildContext context, EditableTextState editableTextState) {

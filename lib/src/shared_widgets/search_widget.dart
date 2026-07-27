@@ -31,10 +31,11 @@ class _SearchWidgetState extends State<SearchWidget> {
   }
 
   void _onControllerChanged() {
-    if (!InspectorController().isSearchVisible &&
-        _textController.text.isNotEmpty) {
-      _textController.clear();
-    }
+    if (InspectorController().isSearchVisible) return;
+
+    if (_textController.text.isNotEmpty) _textController.clear();
+    // Closing the search puts the keyboard away with it.
+    if (_focusNode.hasFocus) _focusNode.unfocus();
   }
 
   @override
