@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:requests_inspector/src/shake.dart';
@@ -14,6 +15,8 @@ import 'helpers/inspector_helper.dart';
 import 'helpers/search_helper.dart';
 import 'enums/share_type_enum.dart';
 import 'requests_filter.dart';
+
+enum JsonExportResult { saved, cancelled, nothingToExport, failed }
 
 typedef StoppingRequestCallback = Future<RequestDetails?> Function(
     RequestDetails requestDetails);
@@ -377,28 +380,53 @@ class InspectorController extends ChangeNotifier {
     );
   }
 
-  /// Exports the requests currently listed in the inspector as a JSON file.
+  /// Saves the requests currently listed in the inspector as a JSON file on
+  /// the device, through the system "Save as" dialog (Downloads, Files, ...).
   ///
   /// Only what the list shows is exported: cleared requests are gone from
   /// [requestsList], and the active search and filters still apply.
-  /// Returns false when there is nothing to export.
+  Future<JsonExportResult> saveRequestsAsJsonFile() async {
+    final requests = filteredRequestsList;
+    if (requests.isEmpty) return JsonExportResult.nothingToExport;
+
+    try {
+      final path = await FilePicker.saveFile(
+        dialogTitle: 'Save requests',
+        fileName: _requestsJsonFileName(),
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: utf8.encode(buildRequestsJson(requests)),
+      );
+      return path == null ? JsonExportResult.cancelled : JsonExportResult.saved;
+    } catch (e) {
+      debugPrint('requests_inspector: saving the JSON file failed: $e');
+      return JsonExportResult.failed;
+    }
+  }
+
+  /// Shares the same JSON file as [saveRequestsAsJsonFile] through the share
+  /// sheet. Returns false when there is nothing to export.
   bool shareRequestsAsJsonFile({Rect? sharePositionOrigin}) {
     final requests = filteredRequestsList;
     if (requests.isEmpty) return false;
 
-    final timestamp = DateTime.now()
-        .toIso8601String()
-        .split('.')
-        .first
-        .replaceAll(':', '-');
     final file = XFile.fromData(
       utf8.encode(buildRequestsJson(requests)),
-      name: 'requests_$timestamp.json',
+      name: _requestsJsonFileName(),
       mimeType: 'application/json',
     );
 
     Share.shareXFiles([file], sharePositionOrigin: sharePositionOrigin);
     return true;
+  }
+
+  String _requestsJsonFileName() {
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .split('.')
+        .first
+        .replaceAll(':', '-');
+    return 'requests_$timestamp.json';
   }
 
   /// The JSON exported by [shareRequestsAsJsonFile].

@@ -278,7 +278,39 @@ class Inspector extends StatelessWidget {
             ),
           ),
         ],
-        // Download the listed requests as a JSON file
+        // Save the listed requests as a JSON file on the device
+        PopupMenuItem(
+          onTap: () async {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            final result =
+                await InspectorController().saveRequestsAsJsonFile();
+            String? message;
+            switch (result) {
+              case JsonExportResult.saved:
+                message = 'JSON file saved';
+                break;
+              case JsonExportResult.nothingToExport:
+                message = 'No requests to download';
+                break;
+              case JsonExportResult.failed:
+                message = 'Could not save the JSON file';
+                break;
+              case JsonExportResult.cancelled:
+                break;
+            }
+            if (message != null) {
+              messenger?.showSnackBar(SnackBar(content: Text(message)));
+            }
+          },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text('Download JSON'),
+              Icon(Icons.download),
+            ],
+          ),
+        ),
+        // Share the listed requests as a JSON file
         PopupMenuItem(
           onTap: () {
             final box = context.findRenderObject() as RenderBox?;
@@ -289,15 +321,15 @@ class Inspector extends StatelessWidget {
                 .shareRequestsAsJsonFile(sharePositionOrigin: origin);
             if (!shared) {
               ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                const SnackBar(content: Text('No requests to download')),
+                const SnackBar(content: Text('No requests to share')),
               );
             }
           },
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
-              Text('Download JSON'),
-              Icon(Icons.download),
+              Text('Share JSON'),
+              Icon(Icons.share),
             ],
           ),
         ),
