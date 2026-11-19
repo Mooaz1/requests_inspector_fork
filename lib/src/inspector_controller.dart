@@ -390,7 +390,7 @@ class InspectorController extends ChangeNotifier {
     if (requests.isEmpty) return JsonExportResult.nothingToExport;
 
     try {
-      final path = await FilePicker.saveFile(
+      final path = await FilePicker.platform.saveFile(
         dialogTitle: 'Save requests',
         fileName: _requestsJsonFileName(),
         type: FileType.custom,
