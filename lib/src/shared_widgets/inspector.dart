@@ -278,6 +278,29 @@ class Inspector extends StatelessWidget {
             ),
           ),
         ],
+        // Download the listed requests as a JSON file
+        PopupMenuItem(
+          onTap: () {
+            final box = context.findRenderObject() as RenderBox?;
+            final origin = box == null
+                ? null
+                : box.localToGlobal(Offset.zero) & box.size;
+            final shared = InspectorController()
+                .shareRequestsAsJsonFile(sharePositionOrigin: origin);
+            if (!shared) {
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                const SnackBar(content: Text('No requests to download')),
+              );
+            }
+          },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text('Download JSON'),
+              Icon(Icons.download),
+            ],
+          ),
+        ),
       ],
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:requests_inspector/requests_inspector.dart';
 
@@ -36,6 +38,24 @@ void main() {
       inspectorController.clearAllRequests();
       expect(inspectorController.requestsList, isEmpty);
       expect(inspectorController.selectedRequest, isNull);
+    });
+
+    test('JSON export holds only the requests still listed', () {
+      inspectorController.clearAllRequests();
+      inspectorController.addNewRequest(RequestDetails(
+          requestMethod: RequestMethod.GET, url: 'http://cleared.com'));
+      inspectorController.clearAllRequests();
+      inspectorController.addNewRequest(RequestDetails(
+          requestMethod: RequestMethod.POST,
+          url: 'http://kept.com',
+          requestBody: {'bytes': Object()}));
+
+      final json = jsonDecode(inspectorController
+          .buildRequestsJson(inspectorController.filteredRequestsList));
+
+      expect(json['count'], 1);
+      expect(json['requests'].single['url'], 'http://kept.com');
+      expect(json['requests'].single['requestMethod'], 'POST');
     });
 
     test('Toggle dark mode should change state', () {

@@ -377,6 +377,42 @@ class InspectorController extends ChangeNotifier {
     );
   }
 
+  /// Exports the requests currently listed in the inspector as a JSON file.
+  ///
+  /// Only what the list shows is exported: cleared requests are gone from
+  /// [requestsList], and the active search and filters still apply.
+  /// Returns false when there is nothing to export.
+  bool shareRequestsAsJsonFile({Rect? sharePositionOrigin}) {
+    final requests = filteredRequestsList;
+    if (requests.isEmpty) return false;
+
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .split('.')
+        .first
+        .replaceAll(':', '-');
+    final file = XFile.fromData(
+      utf8.encode(buildRequestsJson(requests)),
+      name: 'requests_$timestamp.json',
+      mimeType: 'application/json',
+    );
+
+    Share.shareXFiles([file], sharePositionOrigin: sharePositionOrigin);
+    return true;
+  }
+
+  /// The JSON exported by [shareRequestsAsJsonFile].
+  String buildRequestsJson(List<RequestDetails> requests) {
+    return const JsonEncoder.withIndent('  ', _toEncodableFallback).convert({
+      'exportedAt': DateTime.now().toIso8601String(),
+      'count': requests.length,
+      'requests': [for (final request in requests) request.toMap()],
+    });
+  }
+
+  /// Bodies can hold values JSON can't encode (FormData, bytes, ...).
+  static Object? _toEncodableFallback(dynamic value) => value.toString();
+
   /// Puts the selected request on the clipboard.
   ///
   /// The share sheet is not always usable: emulators such as BlueStacks list
